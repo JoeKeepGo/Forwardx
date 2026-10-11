@@ -2,7 +2,7 @@
 
 > This fork's default branch, `pocket-id-oidc`, adds Pocket ID OIDC login without database schema changes.
 > [Configuration and safe migration](docs/guide/oidc-login.md) · [Maintenance policy](docs/fork-maintenance.md) (Chinese).
-> The upstream installers and official images below do not include this fork's OIDC changes; build this branch using the configuration guide.
+> Image: `ghcr.io/joekeepgo/forwardx:oidc` (amd64 / arm64). The upstream installers and official images below do not include this fork's OIDC changes; use this fork's image as described in the configuration guide.
 
 [简体中文](README.md) | [English](README.en.md)
 

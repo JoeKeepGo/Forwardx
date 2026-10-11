@@ -2,7 +2,7 @@
 
 > 此 fork 的默认分支 `pocket-id-oidc` 提供 Pocket ID OIDC 登录，无数据库结构变更。
 > [配置与安全迁移](docs/guide/oidc-login.md) · [分支维护约定](docs/fork-maintenance.md)。
-> 下方原项目的安装脚本和官方镜像不包含本 fork 的 OIDC 改动；请按配置指南从本分支构建。
+> 镜像：`ghcr.io/joekeepgo/forwardx:oidc`（amd64 / arm64）。下方原项目的安装脚本和官方镜像不包含本 fork 的 OIDC 改动；请按配置指南使用本分支镜像。
 
 [简体中文](README.md) | [English](README.en.md)
 

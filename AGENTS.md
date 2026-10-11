@@ -21,6 +21,7 @@ This is JoeKeepGo's authentication-focused fork of poouo/Forwardx. Read
 - Fetch and inspect upstream updates. Prepare integration in an isolated checkout/branch and test it before presenting the result.
 - Weekly maintenance is authorized to inspect upstream and CI, run relevant tests and prepare local fixes. Do not automatically merge upstream, push scheduled changes, create releases/tags, publish packages or deploy. Ask the owner to approve a concrete tested update before those actions.
 - Preserve uncommitted work, avoid force-pushing, and do not contact upstream maintainers without explicit authorization.
+- Publish Docker images only on an explicit owner request, using the manual `docker-image.yml` workflow on `pocket-id-oidc` after successful authentication CI. Use `oidc` and a commit-specific tag; verify both native architectures before exposing the multi-platform tag. Publishing an image does not authorize deployment.
 - Report only a meaningful authentication compatibility change, test failure, completed requested update or required owner action. Remain quiet when state is unchanged or non-actionable.
 
 ## Validation

@@ -34,6 +34,35 @@ Issuer 必须与 discovery 的 `issuer` **完全一致**，包括尾部斜杠；
 
 不添加 OIDC 环境变量覆盖，以免重启或修改部署环境绕过提供商切换保护。只有管理员设置接口能够更改此配置。
 
+## 拉取已发布镜像
+
+本 fork 的 Pocket ID 镜像为 `ghcr.io/joekeepgo/forwardx:oidc`，支持
+`linux/amd64` 和 `linux/arm64`。官方 `ghcr.io/poouo/forwardx` 不包含本分支的 OIDC。
+
+```sh
+docker pull ghcr.io/joekeepgo/forwardx:oidc
+```
+
+在**原有部署目录**创建或修改 `docker-compose.override.yml`，沿用原来的 `.env`、
+Compose 项目名和数据卷：
+
+```yaml
+services:
+  forwardx:
+    image: ghcr.io/joekeepgo/forwardx:oidc
+    pull_policy: always
+```
+
+```sh
+docker compose pull forwardx
+docker compose up -d --no-deps forwardx
+```
+
+若此前用了 `forwardx:oidc-local` 和 `pull_policy: never`，需一起替换为上面的配置。
+`oidc` 会在经明确授权的后续发布中更新；需要固定版本时，使用
+[镜像发布工作流](https://github.com/JoeKeepGo/Forwardx/actions/workflows/docker-image.yml)
+摘要中的 `oidc-<提交前 12 位>` 标签或 digest。镜像发布本身不会更改线上容器。
+
 ## 本地构建与部署示例
 
 此功能需要包含补丁的面板镜像，官方原镜像不包含补丁。以下仅为操作示例，不会自动部署。Node.js 22 与项目 Dockerfile 一致。

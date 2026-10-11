@@ -1,14 +1,15 @@
-name: Docker Image
+name: Pocket ID Docker Image
 
 on:
   workflow_call:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: ghcr.io/poouo/forwardx
+  IMAGE_NAME: ghcr.io/joekeepgo/forwardx
 
 permissions:
   contents: read
+  actions: read
   packages: write
 
 concurrency:
@@ -17,14 +18,26 @@ concurrency:
 
 jobs:
   prepare:
+    if: github.repository == 'JoeKeepGo/Forwardx' && github.ref == 'refs/heads/pocket-id-oidc'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.package.outputs.version }}
+      image_tag: ${{ steps.package.outputs.image_tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Require successful authentication CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --workflow oidc-auth.yml --limit 20 --json status,conclusion \
+            | jq -e 'any(.[]; .status == "completed" and .conclusion == "success")'
 
       - name: Read package version
         id: package
@@ -32,6 +45,7 @@ jobs:
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "image_tag=oidc-${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -75,7 +89,10 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.title=ForwardX
-            org.opencontainers.image.description=ForwardX port forwarding panel
+            org.opencontainers.image.description=ForwardX panel with Pocket ID OIDC login
+            org.opencontainers.image.source=https://github.com/JoeKeepGo/Forwardx
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
             org.forwardx.version=${{ needs.prepare.outputs.version }}
           build-args: |
@@ -100,6 +117,10 @@ jobs:
             -e "EXPECTED_VERSION=${VERSION}" \
             "${IMAGE_NAME}@${DIGEST}" \
             -e '
+              const fs = require("node:fs");
+              if (!fs.readFileSync("dist/index.js", "utf8").includes("/api/auth/oidc/callback")) {
+                throw new Error("OIDC callback missing from runtime bundle");
+              }
               const Database = require("better-sqlite3");
               const db = new Database(":memory:");
               const value = db.prepare("select 1 as value").pluck().get();
@@ -112,6 +133,29 @@ jobs:
                 throw new Error(`Expected version ${process.env.EXPECTED_VERSION}, got ${process.env.FORWARDX_IMAGE_VERSION}`);
               }
             '
+
+      - name: Verify panel startup and OIDC callback
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          container=$(docker run --detach --rm --platform "$PLATFORM" \
+            -e JWT_SECRET=isolated-oidc-image-smoke-test-secret \
+            -p 127.0.0.1:13000:3000 "${IMAGE_NAME}@${DIGEST}")
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          curl --fail --silent --show-error --retry 15 --retry-delay 2 \
+            --retry-all-errors --retry-max-time 90 --max-time 5 \
+            http://127.0.0.1:13000/api/database-health \
+            | jq -e 'has("state")'
+          curl --fail --silent --show-error --max-time 10 \
+            http://127.0.0.1:13000/ --output "$RUNNER_TEMP/panel.html"
+          test -s "$RUNNER_TEMP/panel.html"
+          callback_status=$(curl --silent --show-error --max-time 10 \
+            --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:13000/api/auth/oidc/callback)
+          test "$callback_status" = 302
 
       - name: Export digest
         shell: bash
@@ -158,7 +202,7 @@ jobs:
       - name: Create and verify multi-platform image
         shell: bash
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
         run: |
           set -euo pipefail
           mapfile -t digest_files < <(find "${RUNNER_TEMP}/digests" -maxdepth 1 -type f | sort)
@@ -173,19 +217,26 @@ jobs:
           done
 
           docker buildx imagetools create \
-            -t "${IMAGE_NAME}:v${VERSION}" \
-            -t "${IMAGE_NAME}:latest" \
+            -t "${IMAGE_NAME}:${IMAGE_TAG}" \
+            -t "${IMAGE_NAME}:oidc" \
             "${sources[@]}"
 
-          manifest_json="$(docker buildx imagetools inspect "${IMAGE_NAME}:v${VERSION}" --raw)"
+          manifest_json="$(docker buildx imagetools inspect "${IMAGE_NAME}:${IMAGE_TAG}" --raw)"
           echo "${manifest_json}" | jq -e '
             ([.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] | length) == 1
             and
             ([.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64")] | length) == 1
           '
 
-          version_digest="$(docker buildx imagetools inspect "${IMAGE_NAME}:v${VERSION}" | awk '$1 == "Digest:" { digest=$2 } END { print digest }')"
-          latest_digest="$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" | awk '$1 == "Digest:" { digest=$2 } END { print digest }')"
+          version_digest="$(docker buildx imagetools inspect "${IMAGE_NAME}:${IMAGE_TAG}" | awk '$1 == "Digest:" { digest=$2 } END { print digest }')"
+          latest_digest="$(docker buildx imagetools inspect "${IMAGE_NAME}:oidc" | awk '$1 == "Digest:" { digest=$2 } END { print digest }')"
           test -n "${version_digest}"
           test "${version_digest}" = "${latest_digest}"
-          echo "Published ${IMAGE_NAME}:v${VERSION} and latest at ${version_digest}"
+          echo "Published ${IMAGE_NAME}:${IMAGE_TAG} and oidc at ${version_digest}"
+          {
+            echo "### Pocket ID Docker image"
+            echo "- Fixed image: ${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "- Channel: ${IMAGE_NAME}:oidc"
+            echo "- Digest: ${version_digest}"
+            echo "- Platforms: linux/amd64, linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"
