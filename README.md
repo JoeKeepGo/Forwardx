@@ -1,5 +1,9 @@
 # ForwardX 转发管理面板
 
+> 此 fork 的默认分支 `pocket-id-oidc` 提供 Pocket ID OIDC 登录，无数据库结构变更。
+> [配置与安全迁移](docs/guide/oidc-login.md) · [分支维护约定](docs/fork-maintenance.md)。
+> 下方原项目的安装脚本和官方镜像不包含本 fork 的 OIDC 改动；请按配置指南从本分支构建。
+
 [简体中文](README.md) | [English](README.en.md)
 
 ForwardX 通过轻量 Agent 统一管理多台 Linux 服务器上的端口转发、加密隧道、转发链、故障转移、用户权限、套餐和流量统计。面板不保存主机 SSH 密钥。
