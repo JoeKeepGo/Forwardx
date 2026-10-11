@@ -155,7 +155,7 @@ jobs:
           callback_status=$(curl --silent --show-error --max-time 10 \
             --output /dev/null --write-out '%{http_code}' \
             http://127.0.0.1:13000/api/auth/oidc/callback)
-          test "$callback_status" = 302
+          test "$callback_status" = 303
 
       - name: Export digest
         shell: bash
