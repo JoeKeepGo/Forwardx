@@ -44,6 +44,7 @@ ForwardX 通过 Agent 管理 Linux 主机上的转发资源、业务规则、用
 | [Telegram / Discord 和通知](./notifications.md) | 渠道选择、邮件、绑定、提醒和交互差异 |
 | [AI 助手](./ai-assistant.md) | 模型配置、自然语言操作、确认和持久待办 |
 | [Google 账户登录](./google-login.md) | OAuth 配置、绑定、注册及登录排障 |
+| [OIDC / Pocket ID 登录](./oidc-login.md) | 自定义 SSO、安全迁移和部署示例 |
 | [移动客户端](./mobile-app.md) | Android APK、iOS 未签名 IPA 与自行签名 |
 
 ## 运维与排障

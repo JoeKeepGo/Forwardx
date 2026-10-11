@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { GOOGLE_CALLBACK_PATH } from "../shared/googleAuth";
+import { GOOGLE_CALLBACK_PATH, OIDC_CALLBACK_PATH } from "../shared/googleAuth";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createContext } from "./_core/context";
 import { exchangeGoogleCode, getGoogleSettings, googleFlows, GoogleAuthError, GOOGLE_FLOW_COOKIE } from "./googleOAuth";
@@ -27,7 +27,8 @@ export async function handleGoogleCallback(req: Request, res: Response) {
     const config = await getGoogleSettings();
     const flow = googleFlows.consume(req.query.state, req.cookies?.[GOOGLE_FLOW_COOKIE], config);
     binding = !!flow.userId;
-    res.clearCookie(GOOGLE_FLOW_COOKIE, { ...googleClearCookieOptions(req), path: "/api/auth/google", secure: config.redirectUri.startsWith("https:") });
+    if (req.path !== new URL(config.redirectUri).pathname) throw new GoogleAuthError("invalid_state");
+    res.clearCookie(GOOGLE_FLOW_COOKIE, { ...googleClearCookieOptions(req), path: "/api/auth", secure: config.redirectUri.startsWith("https:") });
     if (req.query.error) throw new GoogleAuthError(req.query.error === "access_denied" ? "cancelled" : "provider_error");
     const checkBinding = async () => {
       if (!binding) return;
@@ -41,7 +42,7 @@ export async function handleGoogleCallback(req: Request, res: Response) {
     const current = await getGoogleSettings();
     if (JSON.stringify(config) !== JSON.stringify(current)) throw new GoogleAuthError("disabled");
     await checkBinding();
-    const user = await resolveGoogleAccount(identity, flow.userId);
+    const user = await resolveGoogleAccount(identity, flow.userId, config);
     if (binding) {
       console.info(`[GoogleAuth] account bound userId=${user.id}`);
       res.redirect(303, "/profile?google=bound");
@@ -75,5 +76,5 @@ export async function handleGoogleCallback(req: Request, res: Response) {
 }
 
 export function registerGoogleAuthRoutes(app: Express) {
-  app.get(GOOGLE_CALLBACK_PATH, (req, res) => { void handleGoogleCallback(req, res); });
+  app.get([GOOGLE_CALLBACK_PATH, OIDC_CALLBACK_PATH], (req, res) => { void handleGoogleCallback(req, res); });
 }

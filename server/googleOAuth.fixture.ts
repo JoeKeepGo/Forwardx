@@ -8,35 +8,53 @@ import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import * as runtime from "./dbRuntime";
 import { ensureDatabaseSchema } from "./dbSchema";
-import { createUser, getUserById, verifyUserPassword } from "./repositories/userRepository";
+import { createUser, getUserById, verifyUserPassword, resetUserPassword } from "./repositories/userRepository";
 import { getSetting, setSetting } from "./repositories/settingsRepository";
 import { issueLoginSession } from "./routers/auth";
 import { registerGoogleAuthRoutes } from "./googleAuthRoutes";
 import { GOOGLE_SETTINGS_KEY, GOOGLE_FLOW_COOKIE } from "./googleOAuth";
 import { GOOGLE_RESULT_COOKIE } from "./routers/google";
+import { oidcSubject } from "./oidcOAuth";
 import { COOKIE_NAME } from "../shared/const";
 
+const oidc = process.env.OIDC_FIXTURE === "1";
+let issuer = "https://pocket.fixture.example";
+const callbackPath = oidc ? "/api/auth/oidc/callback" : "/api/auth/google/callback";
+const identitySubject = (sub: string) => oidc ? oidcSubject(issuer, sub) : sub;
+let discoveryRequests = 0;
 const networkFetch = globalThis.fetch;
 const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
 const codes = new Map<string, { nonce: string; challenge: string; claims: Record<string, unknown> }>();
 let tokenRequests = 0;
 let certRequests = 0;
+let tokenGate: { entered: () => void; release: Promise<void> } | null = null;
 globalThis.fetch = async (input: any, init?: RequestInit) => {
   const url = String(input);
-  if (url === "https://www.googleapis.com/oauth2/v3/certs") {
+  if (oidc && url === `${issuer}/.well-known/openid-configuration`) {
+    discoveryRequests++;
+    return Response.json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`,
+      jwks_uri: `${issuer}/jwks`, response_types_supported: ["code"], id_token_signing_alg_values_supported: ["RS256"],
+      code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["client_secret_basic"] });
+  }
+  if (url === "https://www.googleapis.com/oauth2/v3/certs" || (oidc && url === `${issuer}/jwks`)) {
     certRequests++;
     return Response.json({ keys: [{ ...keys.publicKey.export({ format: "jwk" }), kid: "fixture-key", alg: "RS256", use: "sig" }] });
   }
-  if (url === "https://oauth2.googleapis.com/token") {
+  if (url === "https://oauth2.googleapis.com/token" || (oidc && url === `${issuer}/token`)) {
     tokenRequests++;
     assert.equal(init?.redirect, "error"); assert.ok(init?.signal);
     const body = new URLSearchParams(String(init?.body));
     const item = codes.get(body.get("code")!); assert.ok(item, "unknown authorization code");
     codes.delete(body.get("code")!);
     assert.equal(crypto.createHash("sha256").update(body.get("code_verifier")!).digest("base64url"), item.challenge);
-    assert.equal(body.get("client_secret"), "fixture-client-secret");
+    if (oidc) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, `Basic ${Buffer.from("fixture-pocket-client:fixture-client-secret").toString("base64")}`);
+      assert.equal(body.get("client_secret"), null);
+    } else assert.equal(body.get("client_secret"), "fixture-client-secret");
+    assert.equal(body.get("redirect_uri"), `${origin}${callbackPath}`);
     assert.equal(body.get("grant_type"), "authorization_code");
-    return Response.json({ id_token: jwt.sign({ iss: "https://accounts.google.com", aud: "fixture.apps.googleusercontent.com", nonce: item.nonce,
+    if (tokenGate) { tokenGate.entered(); await tokenGate.release; }
+    return Response.json({ id_token: jwt.sign({ iss: oidc ? issuer : "https://accounts.google.com", aud: oidc ? "fixture-pocket-client" : "fixture.apps.googleusercontent.com", nonce: item.nonce,
       sub: "new-google-user", email: "new-user@example.com", email_verified: true, name: "Google User", ...item.claims }, keys.privateKey,
     { algorithm: "RS256", keyid: "fixture-key", expiresIn: 300 }) });
   }
@@ -82,7 +100,8 @@ async function begin(jar: Jar, claims: Record<string, unknown> = {}, bind = fals
   const url = new URL(result.data.url);
   const code = crypto.randomBytes(20).toString("hex");
   codes.set(code, { nonce: url.searchParams.get("nonce")!, challenge: url.searchParams.get("code_challenge")!, claims });
-  return `/api/auth/google/callback?${new URLSearchParams({ state: url.searchParams.get("state")!, code })}`;
+  assert.equal(url.origin, oidc ? issuer : "https://accounts.google.com");
+  return `${callbackPath}?${new URLSearchParams({ state: url.searchParams.get("state")!, code })}`;
 }
 async function callback(jar: Jar, claims: Record<string, unknown> = {}, bind = false) {
   return request(await begin(jar, claims, bind), jar);
@@ -94,7 +113,23 @@ try {
   assert.equal((await rpc("google.loginStatus", anonymous, undefined, true)).data.enabled, false);
   assert.ok((await rpc("google.start", anonymous, {})).error);
   assert.ok((await rpc("google.settings", anonymous, undefined, true)).error);
-  const config = { enabled: true, clientId: "fixture.apps.googleusercontent.com", clientSecret: "fixture-client-secret", redirectUri: `${origin}/api/auth/google/callback` };
+  let config = { enabled: true, provider: oidc ? "oidc" : "google", issuer: oidc ? issuer : "", label: oidc ? "Pocket ID" : "Google",
+    clientId: oidc ? "fixture-pocket-client" : "fixture.apps.googleusercontent.com", clientSecret: "fixture-client-secret", redirectUri: `${origin}${callbackPath}` };
+  let legacyId = 0;
+  if (oidc) {
+    // Old configurations without provider metadata still select Google. A legacy
+    // raw sub identical to the Pocket ID sub must never identify the same user.
+    await setSetting(GOOGLE_SETTINGS_KEY, JSON.stringify({ enabled: true, clientId: "legacy.apps.googleusercontent.com",
+      clientSecret: "legacy-secret", redirectUri: `${origin}/api/auth/google/callback` }));
+    legacyId = await createUser({ username: "legacy@example.com", password: "legacy-password" });
+    await runtime.executeRaw('UPDATE users SET "googleSubject"=?, password=? WHERE id=?', ["new-google-user", "!google-only", legacyId]);
+    assert.match((await rpc("google.saveSettings", admin, { ...config, confirmProviderChange: true })).error!, /未设置登录密码/);
+    await resetUserPassword(legacyId, "legacy-recovery-password");
+    assert.match((await rpc("google.saveSettings", admin, config)).error!, /明确确认/);
+    assert.equal((await rpc("google.saveSettings", admin, { ...config, confirmProviderChange: true })).error, undefined);
+    assert.equal((await getUserById(legacyId))!.googleSubject, "new-google-user");
+    assert.equal((await rpc("google.loginStatus", new Map(), undefined, true)).data.label, "Pocket ID");
+  }
   assert.ok((await rpc("google.saveSettings", anonymous, config)).error);
   assert.ok((await rpc("google.saveSettings", admin, { ...config, redirectUri: "http://remote.example/api/auth/google/callback" })).error);
   assert.equal((await rpc("google.saveSettings", admin, config)).error, undefined);
@@ -120,7 +155,7 @@ try {
   assert.equal((await getUserById(id))!.password, "!google-only");
   assert.match((await request(pending, anonymous)).headers.get("location")!, /invalid_state/);
   assert.equal((await callback(anonymous)).headers.get("location"), "/");
-  assert.equal((await runtime.queryRaw('SELECT id FROM users WHERE "googleSubject"=?', ["new-google-user"])).length, 1);
+  assert.equal((await runtime.queryRaw('SELECT id FROM users WHERE "googleSubject"=?', [identitySubject("new-google-user")])).length, 1);
 
   // Google-only users can safely create a password using recent identity proof.
   assert.ok((await rpc("google.unbind", anonymous, { password: "wrong-password" })).error);
@@ -185,11 +220,67 @@ try {
   assert.ok(twoFactor.has(COOKIE_NAME));
   assert.equal((await rpc("auth.me", twoFactor, undefined, true)).data.id, adminId);
 
+  if (oidc) {
+    // Changing configuration during the outbound token request must not create
+    // an account or a session from the configuration that was just disabled.
+    await session(admin, adminId);
+    let entered!: () => void; let release!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    tokenGate = { entered, release: new Promise<void>(resolve => { release = resolve; }) };
+    const waitingJar: Jar = new Map();
+    const callbackUrl = await begin(waitingJar, { sub: "stale-config", email: "stale@example.com" });
+    const waitingResponse = request(callbackUrl, waitingJar);
+    await started;
+    assert.equal((await rpc("google.saveSettings", admin, { ...config, enabled: false })).error, undefined);
+    release();
+    assert.match((await waitingResponse).headers.get("location")!, /disabled/);
+    assert.equal(waitingJar.has(COOKIE_NAME), false);
+    assert.equal((await runtime.queryRaw('SELECT id FROM users WHERE "googleSubject"=?', [identitySubject("stale-config")])).length, 0);
+    tokenGate = null;
+    assert.equal((await rpc("google.saveSettings", admin, config)).error, undefined);
+
+    // A binding browser that logs out while a token is being verified cannot
+    // finish binding using its formerly valid session.
+    const bindingStarted = new Promise<void>(resolve => { entered = resolve; });
+    tokenGate = { entered, release: new Promise<void>(resolve => { release = resolve; }) };
+    const bindingUrl = await begin(admin, { sub: "expired-during-exchange", email: "admin@example.com" }, true);
+    const bindingResponse = request(bindingUrl, admin);
+    await bindingStarted;
+    await rpc("auth.logout", admin);
+    release();
+    assert.match((await bindingResponse).headers.get("location")!, /session_expired/);
+    assert.equal((await getUserById(adminId))!.googleSubject, identitySubject("admin-google"));
+    tokenGate = null;
+  }
+
   // Credential clearing is explicit and disables the public entry point.
   await session(admin, adminId);
   assert.equal((await rpc("google.saveSettings", admin, { ...config, clientSecret: undefined, enabled: false, clearSecret: true })).error, undefined);
   assert.equal((await rpc("google.settings", admin, undefined, true)).data.secretConfigured, false);
-  assert.equal(certRequests, 1, "Google signing keys are cached across logins");
+  if (oidc) {
+    assert.equal(certRequests, 1, "OIDC signing keys are cached across logins");
+    assert.equal(discoveryRequests, 1, "discovery is cached");
+    assert.notEqual(id, legacyId);
+    assert.equal((await getUserById(legacyId))!.googleSubject, "new-google-user");
+    assert.equal((await getUserById(adminId))!.googleSubject, identitySubject("admin-google"));
+    // A second issuer cannot reuse an existing first-issuer identity, even with
+    // exactly the same sub and verified email. Disabled config still guards switching.
+    const oldSubject = (await getUserById(adminId))!.googleSubject;
+    issuer = "https://second-pocket.fixture.example";
+    config = { ...config, enabled: true, issuer };
+    assert.match((await rpc("google.saveSettings", admin, config)).error!, /明确确认/);
+    assert.equal((await rpc("google.saveSettings", admin, { ...config, confirmProviderChange: true })).error, undefined);
+    assert.equal((await rpc("google.status", admin, undefined, true)).data.activeBinding, false);
+    assert.match((await callback(new Map(), { sub: "admin-google", email: "admin@example.com" })).headers.get("location")!, /existing_account/);
+    assert.equal((await getUserById(adminId))!.googleSubject, oldSubject);
+    assert.match((await callback(admin, { sub: "admin-google", email: "admin@example.com" }, true)).headers.get("location")!, /already_bound/);
+    assert.equal((await rpc("google.unbind", admin, { password: "fixture-admin-password" })).error, undefined);
+    assert.equal((await callback(admin, { sub: "admin-google", email: "admin@example.com" }, true)).headers.get("location"), "/profile?google=bound");
+    assert.equal((await getUserById(adminId))!.googleSubject, identitySubject("admin-google"));
+    assert.equal((await callback(new Map(), { sub: "new-passwordless", email: "passwordless@example.com" })).headers.get("location"), "/");
+    assert.match((await rpc("google.saveSettings", admin, { ...config, provider: "google", issuer: "", enabled: false,
+      clientId: "fixture.apps.googleusercontent.com", redirectUri: `${origin}/api/auth/google/callback`, confirmProviderChange: true })).error!, /未设置登录密码/);
+  } else assert.equal(certRequests, 1, "Google signing keys are cached across logins");
   assert.equal(anonymous.has(GOOGLE_FLOW_COOKIE), false);
 } finally {
   globalThis.fetch = networkFetch;

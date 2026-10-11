@@ -1,12 +1,14 @@
 # Google 账户登录
 
+自定义 Pocket ID 登录和安全迁移见 [OIDC / Pocket ID 登录](./oidc-login.md)。面板只启用一个身份提供商。
+
 Google 登录为可选功能，默认关闭；关闭后原有密码登录不受影响。当前用于网页版，移动 App 仍使用原有登录方式。
 
 ## 管理员配置
 
 1. 在 [Google Cloud Console](https://console.cloud.google.com/apis/credentials) 创建项目并配置 OAuth 同意界面，仅使用基本身份权限 `openid email profile`。
 2. 创建类型为“Web 应用”的 OAuth 客户端，获取 Client ID 和 Client Secret。
-3. 打开面板“系统设置 → 系统配置 → Google 账户登录”，填写客户端信息和完整回调地址，例如 `https://panel.example.com/api/auth/google/callback`。
+3. 打开面板“系统设置 → 系统配置 → SSO 账户登录”，选择 Google（下文均为 Google 模式），填写客户端信息和完整回调地址，例如 `https://panel.example.com/api/auth/google/callback`。
 4. 将同一回调地址添加到 Google Cloud 客户端的“已获授权的重定向 URI”，必须完全一致。
 5. 启用并保存后，登录/注册页显示“使用 Google 继续”。密钥仅保存在面板服务端；留空保存会保留旧密钥，可单独清除并关闭功能。
 
@@ -17,7 +19,7 @@ Google 登录为可选功能，默认关闭；关闭后原有密码登录不受�
 ## 账户规则
 
 - 未绑定过的 Google 身份，仅在面板开放注册且邮箱满足注册白名单时创建普通用户；Google 负责验证邮箱，不要求重复输入邮件验证码，但不会自动开通转发权限。
-- 已有同邮箱账户不会自动合并或绑定。用户应先使用原方式登录，在“个人中心 → Google 账户绑定”中主动绑定。
+- 已有同邮箱账户不会自动合并或绑定。用户应先使用原方式登录，在“个人中心 → SSO 账户绑定”中主动绑定。
 - 关闭注册后，已绑定用户仍可 Google 登录，未绑定用户不能借此创建新账户。
 - 被禁用账户不能登录；已有双重验证仍须完成，原多设备会话策略保持不变。
 - 新 Google 账户可以在 Google 登录后的五分钟内于个人中心设置密码；设置密码会使旧会话失效。解绑须验证当前密码，避免仅有 Google 登录的账户被解绑后无法进入。

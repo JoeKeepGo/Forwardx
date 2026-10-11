@@ -1,48 +1,73 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-import { GOOGLE_CALLBACK_PATH, GOOGLE_AUTH_MESSAGES, type GoogleAuthErrorCode } from "../shared/googleAuth";
+import { GOOGLE_CALLBACK_PATH, OIDC_CALLBACK_PATH, GOOGLE_AUTH_MESSAGES, type GoogleAuthErrorCode } from "../shared/googleAuth";
+import { getOidcProvider, exchangeOidcCode } from "./oidcOAuth";
 import { getSetting } from "./repositories/settingsRepository";
 
 // The credential key is deliberately recognized by config-audit/support redaction.
 export const GOOGLE_SETTINGS_KEY = "googleOAuthCredentials";
 export const GOOGLE_FLOW_COOKIE = "forwardx_google_flow";
 export const GOOGLE_FLOW_TTL_MS = 10 * 60_000;
-export type GoogleSettings = { enabled: boolean; clientId: string; clientSecret: string; redirectUri: string };
+export type GoogleSettings = { enabled: boolean; clientId: string; clientSecret: string; redirectUri: string; provider?: "google" | "oidc"; issuer?: string; label?: string };
 export class GoogleAuthError extends Error {
   constructor(public readonly code: GoogleAuthErrorCode) { super(GOOGLE_AUTH_MESSAGES[code]); }
 }
 
-export function normalizeGoogleRedirectUri(raw: string) {
+export function normalizeGoogleRedirectUri(raw: string, provider: "google" | "oidc" = "google") {
   try {
     const url = new URL(raw.trim());
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-    if (url.username || url.password || url.search || url.hash || url.pathname !== GOOGLE_CALLBACK_PATH
+    if (url.username || url.password || url.search || url.hash || url.pathname !== (provider === "oidc" ? OIDC_CALLBACK_PATH : GOOGLE_CALLBACK_PATH)
       || (url.protocol !== "https:" && !(local && url.protocol === "http:"))) return "";
     return url.href;
   } catch { return ""; }
 }
 
+// Keep the exact issuer string (including trailing slash) as the identity namespace.
+export function normalizeOidcIssuer(raw: string) {
+  const value = raw.trim();
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash
+      || (url.href !== value && url.href !== `${value}/`)) return "";
+    return value;
+  } catch { return ""; }
+}
+export const providerLabel = (config: GoogleSettings) => config.provider === "oidc" ? (config.label || "SSO") : "Google";
+export const providerNamespace = (config: GoogleSettings) => config.provider === "oidc" ? `oidc:${digest(config.issuer || "")}:` : "google";
+export const subjectMatchesProvider = (subject: string, config: GoogleSettings) => config.provider === "oidc"
+  ? subject.startsWith(providerNamespace(config)) : /^[a-zA-Z0-9_-]{1,255}$/.test(subject);
+export async function startGoogleFlow(config: GoogleSettings, ip: string, binding?: { userId: number; sid: string }) {
+  if (!config.enabled || !googleConfigured(config)) throw new GoogleAuthError("disabled");
+  const endpoint = config.provider === "oidc" ? (await getOidcProvider(config.issuer!)).metadata.authorization_endpoint : undefined;
+  return googleFlows.create(config, ip, binding, Date.now(), endpoint);
+}
+
 export function readGoogleSettings(raw: string | null | undefined): GoogleSettings {
   let data: any = {};
   try { data = JSON.parse(raw || "{}"); } catch { /* disabled when malformed */ }
+  const provider = data?.provider === "oidc" ? "oidc" : "google";
   return {
-    enabled: data?.enabled === true,
+    provider, issuer: typeof data?.issuer === "string" ? normalizeOidcIssuer(data.issuer) : "",
+    label: typeof data?.label === "string" ? data.label.trim().slice(0, 40) : "",
+    enabled: data?.enabled === true && (data?.provider === undefined || ["google", "oidc"].includes(data.provider)),
     clientId: typeof data?.clientId === "string" ? data.clientId.trim() : "",
     clientSecret: typeof data?.clientSecret === "string" ? data.clientSecret.trim() : "",
-    redirectUri: typeof data?.redirectUri === "string" ? normalizeGoogleRedirectUri(data.redirectUri) : "",
+    redirectUri: typeof data?.redirectUri === "string" ? normalizeGoogleRedirectUri(data.redirectUri, provider) : "",
   };
 }
 export const getGoogleSettings = async () => readGoogleSettings(await getSetting(GOOGLE_SETTINGS_KEY));
-export const googleConfigured = (config: GoogleSettings) => !!(config.clientId && config.clientSecret && config.redirectUri);
+export const googleConfigured = (config: GoogleSettings) => !!(config.clientId && config.clientSecret && config.redirectUri && (config.provider !== "oidc" || config.issuer));
 export const googleSettingsSummary = (config: GoogleSettings) => ({
+  provider: config.provider || "google", issuer: config.issuer || "", label: providerLabel(config),
   enabled: config.enabled, configured: googleConfigured(config), clientId: config.clientId,
   redirectUri: config.redirectUri, secretConfigured: !!config.clientSecret,
 });
 const fingerprint = (config: GoogleSettings) => crypto.createHash("sha256").update(JSON.stringify(config)).digest("hex");
 const digest = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
-type GoogleFlow = { expiresAt: number; browserHash: string; nonce: string; verifier: string; configHash: string;
+export type GoogleFlow = { expiresAt: number; browserHash: string; nonce: string; verifier: string; configHash: string;
   userId?: number; sid?: string };
 
 // Short-lived, bounded, single-use state. A panel restart requires restarting login,
@@ -52,7 +77,7 @@ export class GoogleFlowStore {
   private rates = new Map<string, { count: number; until: number }>();
   private nextPrune = 0;
   constructor(private readonly maxSize = 10_000) {}
-  create(config: GoogleSettings, ip: string, binding?: { userId: number; sid: string }, now = Date.now()) {
+  create(config: GoogleSettings, ip: string, binding?: { userId: number; sid: string }, now = Date.now(), authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth") {
     if (!config.enabled || !googleConfigured(config)) throw new GoogleAuthError("disabled");
     if (now >= this.nextPrune) {
       for (const [key, item] of this.flows) if (item.expiresAt <= now) this.flows.delete(key);
@@ -64,17 +89,18 @@ export class GoogleFlowStore {
     const rate = entry && entry.until > now ? entry : { count: 0, until: now + GOOGLE_FLOW_TTL_MS };
     if (++rate.count > 20) throw new GoogleAuthError("rate_limited");
     this.rates.set(ip, rate);
+    if (config.provider === "oidc" && authorizationEndpoint === "https://accounts.google.com/o/oauth2/v2/auth") throw new GoogleAuthError("provider_error");
     const state = crypto.randomBytes(32).toString("base64url");
     const browserToken = crypto.randomBytes(32).toString("base64url");
     const flow: GoogleFlow = { expiresAt: now + GOOGLE_FLOW_TTL_MS, browserHash: digest(browserToken),
       nonce: crypto.randomBytes(32).toString("base64url"), verifier: crypto.randomBytes(48).toString("base64url"),
       configHash: fingerprint(config), ...binding };
     this.flows.set(state, flow);
-    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    const url = new URL(authorizationEndpoint);
     url.search = new URLSearchParams({ client_id: config.clientId, redirect_uri: config.redirectUri,
       response_type: "code", scope: "openid email profile", state, nonce: flow.nonce,
       code_challenge: crypto.createHash("sha256").update(flow.verifier).digest("base64url"),
-      code_challenge_method: "S256", prompt: "select_account" }).toString();
+      code_challenge_method: "S256", ...(config.provider === "oidc" ? {} : { prompt: "select_account" }) }).toString();
     return { url: url.href, browserToken };
   }
   consume(state: unknown, browserToken: unknown, config: GoogleSettings, now = Date.now()) {
@@ -88,13 +114,24 @@ export class GoogleFlowStore {
 }
 export const googleFlows = new GoogleFlowStore();
 
-async function googleJson(url: string, init?: RequestInit) {
+export async function providerJson(url: string, init?: RequestInit) {
   try {
     const response = await fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error("provider");
-    const text = await response.text();
-    if (text.length > 128_000) throw new Error("size");
-    return JSON.parse(text);
+    if (!response.body) throw new Error("body");
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 128_000) throw new Error("size");
+        chunks.push(value);
+      }
+      return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } finally { await reader.cancel().catch(() => undefined); }
   } catch { throw new GoogleAuthError("provider_error"); }
 }
 
@@ -108,7 +145,7 @@ async function googleSigningKey(kid: string) {
   if (cached && keyCache!.expiresAt > now) return cached;
   if (!keyRequest && now - lastKeyFetch >= 30_000) {
     lastKeyFetch = now;
-    keyRequest = googleJson("https://www.googleapis.com/oauth2/v3/certs").then(data => {
+    keyRequest = providerJson("https://www.googleapis.com/oauth2/v3/certs").then(data => {
       if (!Array.isArray(data?.keys) || data.keys.length > 16) throw new GoogleAuthError("provider_error");
       const keys = data.keys.filter((key: any) => key.kty === "RSA" && key.use === "sig" && key.alg === "RS256" && typeof key.kid === "string") as GoogleJwk[];
       keyCache = { keys, expiresAt: Date.now() + 30 * 60_000 };
@@ -140,12 +177,12 @@ export async function exchangeGoogleCode(config: GoogleSettings, flow: GoogleFlo
   // Bound outbound work without creating a queue of waiting login promises.
   if (activeExchanges >= 32) throw new GoogleAuthError("rate_limited");
   activeExchanges++;
-  try { return await exchangeCode(config, flow, code); }
+  try { return config.provider === "oidc" ? await exchangeOidcCode(config, flow, code) : await exchangeCode(config, flow, code); }
   finally { activeExchanges--; }
 }
 async function exchangeCode(config: GoogleSettings, flow: GoogleFlow, code: unknown) {
   if (typeof code !== "string" || !code || code.length > 4096) throw new GoogleAuthError("invalid_identity");
-  const data = await googleJson("https://oauth2.googleapis.com/token", { method: "POST",
+  const data = await providerJson("https://oauth2.googleapis.com/token", { method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ code, client_id: config.clientId, client_secret: config.clientSecret,
       redirect_uri: config.redirectUri, grant_type: "authorization_code", code_verifier: flow.verifier }) });

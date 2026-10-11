@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test:release-notes": "node --test scripts/release-notes.test.mjs",
+    "test:oidc-auth": "node --import tsx --test server/googleOAuth.test.ts server/oidcOAuth.test.ts",
     "test:google-auth": "node --import tsx --test server/googleOAuth.test.ts",
     "test:ai": "node --import tsx --test server/ai/client.test.ts server/ai/planner.test.ts server/ai/panelTools.test.ts server/ai/workflow.test.ts server/ai/managePresets.test.ts server/ai/rateLimiter.test.ts server/ai/settings.test.ts server/ai/skills/forwardxCore.test.ts",
     "dev": "tsx server/index.ts",

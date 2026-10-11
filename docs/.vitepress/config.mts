@@ -65,6 +65,7 @@ export default defineConfig({
           { text: "Telegram / Discord 和通知", link: "/guide/notifications" },
           { text: "AI 助手", link: "/guide/ai-assistant" },
           { text: "Google 账户登录", link: "/guide/google-login" },
+          { text: "OIDC / Pocket ID 登录", link: "/guide/oidc-login" },
         ],
       },
       {

@@ -7,15 +7,16 @@ import { getUserById, registerUser } from "./repositories/userRepository";
 import { getEmailConfig } from "./email";
 import { ensureAllowedEmail } from "./routers/auth";
 import { withKeyedTaskLock } from "./keyedTaskLock";
-import { GoogleAuthError } from "./googleOAuth";
+import { GoogleAuthError, getGoogleSettings, type GoogleSettings } from "./googleOAuth";
 
 export const GOOGLE_ONLY_PASSWORD = "!google-only";
 export type GoogleIdentity = { subject: string; email: string; name: string };
 
-export async function resolveGoogleAccount(identity: GoogleIdentity, bindingUserId?: number) {
+export async function resolveGoogleAccount(identity: GoogleIdentity, bindingUserId?: number, expectedConfig?: GoogleSettings) {
   // Local serialization avoids duplicate first-login registration; the unique
   // database subject constraint remains the final protection across processes.
   return withKeyedTaskLock("google-account-link", () => withDatabaseTransaction(async () => {
+    if (expectedConfig && JSON.stringify(expectedConfig) !== JSON.stringify(await getGoogleSettings())) throw new GoogleAuthError("disabled");
     const db = await getDb();
     if (!db) throw new Error("Database unavailable");
     const [linked] = await db.select().from(users).where(eq(users.googleSubject, identity.subject)).limit(1);

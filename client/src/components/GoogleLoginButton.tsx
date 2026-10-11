@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2, KeyRound } from "lucide-react";
 import { toast } from "@/lib/localizedToast";
 import { t } from "@/i18n";
 import { mobileAuth } from "@/lib/mobileAuth";
@@ -19,7 +19,7 @@ export default function GoogleLoginButton({ disabled = false, className = "" }: 
   const start = trpc.google.start.useMutation({ onSuccess: data => { window.location.assign(data.url); }, onError: error => toast.error(error.message) });
   if (!data?.enabled || mobileAuth.isNative) return null;
   return <Button type="button" variant="outline" className={`w-full gap-2 whitespace-normal ${className}`} disabled={disabled || start.isPending} onClick={() => start.mutate({})}>
-    {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleMark />}
-    {t("使用 Google 继续")}
+    {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : data.provider === "oidc" ? <KeyRound className="h-4 w-4" /> : <GoogleMark />}
+    {data.provider === "oidc" ? t("使用 {0} 继续", [data.label]) : t("使用 Google 继续")}
   </Button>;
 }
