@@ -1,6 +1,7 @@
 import { getFormatLocale } from "@/i18n";
 import { t as translateText } from "@/i18n";
 import NotificationSettingsCard from "@/components/NotificationSettingsCard";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import GoogleLoginSettingsCard from "@/components/GoogleLoginSettingsCard";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -490,8 +491,8 @@ function createDefaultHomepageHtml(themeId: PersonalizationThemePresetId) {
         <div class="grid">
           <div class="item"><b>多节点</b><span>管理多台 Linux 主机和隧道。</span></div>
           <div class="item"><b>流量统计</b><span>按用户和规则记录转发用量。</span></div>
-          <div class="item"><b>套餐订阅</b><span>支持余额、套餐和支付配置。</span></div>
-          <div class="item"><b>Telegram</b><span>用户可通过机器人自助查询和管理。</span></div>
+          ${showCommunityFeatures ? '<div class="item"><b>套餐订阅</b><span>支持余额、套餐和支付配置。</span></div>' : '<div class="item"><b>资源权限</b><span>按用户分配转发资源和使用额度。</span></div>'}
+          ${showCommunityFeatures ? '<div class="item"><b>Telegram</b><span>用户可通过机器人自助查询和管理。</span></div>' : '<div class="item"><b>账户安全</b><span>支持 SSO 登录和双因素认证。</span></div>'}
         </div>
       </div>
     </section>
@@ -516,7 +517,7 @@ const settingsTabs = ["system", "telegram", "email", "personalization", "backup"
 type SettingsTab = typeof settingsTabs[number];
 const settingsTabItems = [
   { value: "system", label: translateText("系统配置"), icon: Settings2 },
-  { value: "telegram", label: translateText("通知渠道"), icon: Send },
+  { value: "telegram", label: showCommunityFeatures ? translateText("通知渠道") : translateText("AI 助手"), icon: Send },
   { value: "email", label: translateText("邮箱设置"), icon: Mail },
   { value: "personalization", label: translateText("个性化配置"), icon: Palette },
   { value: "backup", label: translateText("备份恢复"), icon: Database },
@@ -775,7 +776,7 @@ function SettingsContent() {
 
         {/* Telegram Bot Tab */}
         <TabsContent value="telegram" className="space-y-4">
-          <NotificationSettingsCard telegram={<TelegramBotSettingsCard />} />
+          {showCommunityFeatures && <NotificationSettingsCard telegram={<TelegramBotSettingsCard />} />}
           <DeepSeekSettingsCard />
         </TabsContent>
 
@@ -2828,7 +2829,7 @@ function DeepSeekSettingsCard() {
                 </div>
               </div>
 
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
+              <div className={showCommunityFeatures ? "grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]" : "grid gap-3"}>
                 <div className="rounded-lg border border-border/40 bg-background/50 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -2841,7 +2842,7 @@ function DeepSeekSettingsCard() {
                     />
                   </div>
                 </div>
-                <div className="rounded-lg border border-border/40 bg-background/50 p-3">
+                {showCommunityFeatures && <div className="rounded-lg border border-border/40 bg-background/50 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium">{translateText("机器人信息自动撤回")}</p>
@@ -2852,8 +2853,8 @@ function DeepSeekSettingsCard() {
                       onCheckedChange={setDeepseekTelegramAutoRecallEnabled}
                     />
                   </div>
-                </div>
-                <div className="space-y-2 rounded-lg border border-border/40 bg-background/50 p-3">
+                </div>}
+                {showCommunityFeatures && <div className="space-y-2 rounded-lg border border-border/40 bg-background/50 p-3">
                   <Label className="text-xs text-muted-foreground">{translateText("撤回时间（秒）")}</Label>
                   <Input
                     type="number"
@@ -2863,7 +2864,7 @@ function DeepSeekSettingsCard() {
                     onChange={(e) => setDeepseekTelegramAutoRecallSeconds(Math.min(1200, Math.max(30, Number(e.target.value) || 60)))}
                   />
                   <p className="text-xs text-muted-foreground">{translateText("范围 30-1200 秒，默认 60 秒。")}</p>
-                </div>
+                </div>}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -4714,7 +4715,7 @@ function SystemInfoSection() {
       icon: Github,
       iconClassName: "",
     },
-    {
+    ...(showCommunityFeatures ? [{
       label: translateText("Telegram 双向消息机器人"),
       url: settings?.telegramBotUrl || "#",
       icon: Send,
@@ -4725,7 +4726,7 @@ function SystemInfoSection() {
       url: "https://t.me/ForwardX_panel",
       icon: UserPlus,
       iconClassName: "text-primary",
-    },
+    }] : []),
     ...(androidApkDownloadUrl ? [{
       label: translateText("Android APK 下载"),
       url: androidApkDownloadUrl,

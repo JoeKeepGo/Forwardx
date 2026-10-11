@@ -12,6 +12,7 @@ This is JoeKeepGo's authentication-focused fork of poouo/Forwardx. Read
 - Verify discovery issuer, endpoints, ID token signature, issuer, audience, authorized party, nonce, expiry and verified email. Preserve single-use browser-bound state and PKCE S256.
 - Provider/issuer switches require explicit confirmation and password recovery for every bound account. Keep old bindings dormant until users explicitly unbind and rebind.
 - Preserve disabled-user checks, sessions, local roles/permissions, 2FA, registration restrictions and email allowlists.
+- The owner requested the enterprise UI: hide Telegram/Discord login, bindings, bot settings, community promotions and ordinary-user purchase entries by default. Preserve SSO/password/2FA/email and existing data, backend integrations and API permissions. `VITE_FORWARDX_COMMUNITY_UI=1` restores community UI at frontend build time; it is not a runtime access-control switch.
 - Never commit credentials, real account data, generated test databases or build outputs.
 
 ## Git and maintenance

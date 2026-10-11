@@ -1,4 +1,5 @@
 import { getFormatLocale } from "@/i18n";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import { t as translateText } from "@/i18n";
 import { useAuth } from "@/_core/hooks/useAuth";
 import LanguageSelector from "@/components/LanguageSelector";
@@ -423,7 +424,7 @@ function DashboardLayoutContent({
     staleTime: 60 * 1000,
   });
   const { data: storeStatus } = trpc.plans.storeStatus.useQuery(undefined, {
-    enabled: !!user && !isAdmin,
+    enabled: showCommunityFeatures && !!user && !isAdmin,
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -438,7 +439,7 @@ function DashboardLayoutContent({
     retry: false,
   });
   const { data: telegramStatus } = trpc.telegram.status.useQuery(undefined, {
-    enabled: !!user,
+    enabled: showCommunityFeatures && !!user,
     refetchInterval: (query) => {
       const status = query.state.data;
       if (!status || status.bound) return false;
@@ -448,7 +449,7 @@ function DashboardLayoutContent({
     refetchOnWindowFocus: false,
     retry: false,
   });
-  const { data: discordStatus } = trpc.discord.status.useQuery(undefined, { enabled: !!user, refetchOnWindowFocus: true });
+  const { data: discordStatus } = trpc.discord.status.useQuery(undefined, { enabled: showCommunityFeatures && !!user, refetchOnWindowFocus: true });
   const sidebarMenuSettings = useMemo(
     () => normalizeSidebarMenuSettings(publicInfo?.sidebarMenu),
     [publicInfo?.sidebarMenu]
@@ -1061,8 +1062,8 @@ function DashboardLayoutContent({
   const userStoreMenuItems = !isAdmin
     ? [
         { icon: Package, label: translateText("我的订阅"), path: "/subscriptions" },
-        { icon: ReceiptText, label: translateText("账单中心"), path: "/wallet" },
-        ...(storeStatus?.enabled ? [{ icon: ShoppingBag, label: translateText("商店"), path: "/store" }] : []),
+        ...(showCommunityFeatures ? [{ icon: ReceiptText, label: translateText("账单中心"), path: "/wallet" }] : []),
+        ...(showCommunityFeatures && storeStatus?.enabled ? [{ icon: ShoppingBag, label: translateText("商店"), path: "/store" }] : []),
       ]
     : [];
   const visibleAnnouncementsMenuItems = isSidebarNavItemVisible(announcementsMenuItem) ? [announcementsMenuItem] : [];
@@ -1525,7 +1526,7 @@ function DashboardLayoutContent({
                 <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
                   <p className="truncate text-sm font-medium leading-5">{accountDisplayName}</p>
                   <p className="mt-1 whitespace-normal break-words text-xs leading-4 text-muted-foreground">
-                    {isAdmin ? translateText("管理员") : translateText("用户")} · {discordStatus?.selected ? `Discord ${discordStatus.bound ? translateText("已绑定") : translateText("未绑定")}` : telegramStatus?.bound ? translateText("TG 已绑定") : translateText("TG 未绑定")}
+                    {isAdmin ? translateText("管理员") : translateText("用户")}{showCommunityFeatures && <> · {discordStatus?.selected ? `Discord ${discordStatus.bound ? translateText("已绑定") : translateText("未绑定")}` : telegramStatus?.bound ? translateText("TG 已绑定") : translateText("TG 未绑定")}</>}
                   </p>
                 </div>
               </button>
@@ -1548,14 +1549,14 @@ function DashboardLayoutContent({
                 <UserRound />
                 <span>{translateText("个人资料")}</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
+              {showCommunityFeatures && <DropdownMenuItem
                 onClick={() => { setAccountMenuOpen(false); openTelegramDialog(); }}
                 disabled={!discordStatus || createTelegramBindMutation.isPending}
                 className="cursor-pointer"
               >
                 <Send />
                 <span>{discordStatus?.selected ? translateText("Discord 绑定") : translateText("Telegram 绑定")}</span>
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
               {!mobileAuth.isNative && isAdmin && (
                 <DropdownMenuItem
                   onClick={openPanelUpdateFromAccountMenu}
@@ -1649,6 +1650,7 @@ function DashboardLayoutContent({
               rel="noopener noreferrer"
               className="transition-colors hover:text-foreground"
             >{translateText("使用教程")}</a>
+            {showCommunityFeatures && <>
             <span className="text-muted-foreground/45">|</span>
             <a
               href={publicInfo?.telegramBotUrl || "https://t.me/miyin_private_bot"}
@@ -1663,6 +1665,7 @@ function DashboardLayoutContent({
               rel="noopener noreferrer"
               className="transition-colors hover:text-foreground"
             >{translateText("TG群组")}</a>
+            </>}
           </div>
         </footer>
       </SidebarInset>
@@ -2044,10 +2047,10 @@ function DashboardLayoutContent({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showTelegramDialog && !!discordStatus?.selected} onOpenChange={setShowTelegramDialog}>
+      <Dialog open={showCommunityFeatures && showTelegramDialog && !!discordStatus?.selected} onOpenChange={setShowTelegramDialog}>
         <DialogContent className="sm:max-w-md max-h-[85svh] overflow-y-auto"><DialogTitle>{translateText("Discord 绑定")}</DialogTitle><DialogDescription>{translateText("配置当前账号的 Discord 通知和机器人交互。")}</DialogDescription><DiscordAccountCard /></DialogContent>
       </Dialog>
-      <Dialog open={showTelegramDialog && !discordStatus?.selected} onOpenChange={setShowTelegramDialog}>
+      <Dialog open={showCommunityFeatures && showTelegramDialog && !discordStatus?.selected} onOpenChange={setShowTelegramDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary" />{translateText("Telegram 绑定")}</DialogTitle>

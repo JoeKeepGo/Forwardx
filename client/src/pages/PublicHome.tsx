@@ -1,4 +1,5 @@
 import { t as translateText } from "@/i18n";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -102,15 +103,15 @@ export default function PublicHome() {
               </CardContent>
             </Card>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className={showCommunityFeatures ? "grid grid-cols-3 gap-3" : "grid grid-cols-2 gap-3"}>
               <div className="rounded-lg border border-border/50 bg-card/80 p-3 text-center shadow-sm backdrop-blur">
                 <Zap className="mx-auto h-4 w-4 text-chart-4" />
                 <p className="mt-2 text-xs text-muted-foreground">{translateText("在线升级")}</p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-card/80 p-3 text-center shadow-sm backdrop-blur">
+              {showCommunityFeatures && <div className="rounded-lg border border-border/50 bg-card/80 p-3 text-center shadow-sm backdrop-blur">
                 <WalletCards className="mx-auto h-4 w-4 text-chart-2" />
                 <p className="mt-2 text-xs text-muted-foreground">{translateText("套餐支付")}</p>
-              </div>
+              </div>}
               <div className="rounded-lg border border-border/50 bg-card/80 p-3 text-center shadow-sm backdrop-blur">
                 <Lock className="mx-auto h-4 w-4 text-primary" />
                 <p className="mt-2 text-xs text-muted-foreground">{translateText("加密通信")}</p>
@@ -128,8 +129,10 @@ export default function PublicHome() {
           </a>
           <span className="text-muted-foreground/45">|</span>
           <a href="https://poouo.github.io/Forwardx/" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">{translateText("使用教程")}</a>
+          {showCommunityFeatures && <>
           <span className="text-muted-foreground/45">|</span>
           <a href="https://t.me/ForwardX_panel" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">{translateText("Telegram 群组")}</a>
+          </>}
         </div>
       </footer>
     </div>

@@ -4,6 +4,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { AvatarPicker } from "@/components/AvatarPicker";
 import DashboardLayout from "@/components/DashboardLayout";
 import DiscordAccountCard from "@/components/DiscordAccountCard";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import GoogleAccountCard from "@/components/GoogleAccountCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ function ProfileContent() {
   const [mobileUpdateInfo, setMobileUpdateInfo] = useState<MobileAppUpdateResult | null>(null);
 
   const isAdmin = user?.role === "admin";
-  const { data: discordStatus } = trpc.discord.status.useQuery(undefined, { enabled: !!user, refetchOnWindowFocus: true });
+  const { data: discordStatus } = trpc.discord.status.useQuery(undefined, { enabled: showCommunityFeatures && !!user, refetchOnWindowFocus: true });
 
   const { data: avatarQuota } = trpc.users.avatarQuota.useQuery(undefined, {
     enabled: !!user,
@@ -72,7 +73,7 @@ function ProfileContent() {
     retry: false,
   });
   const { data: telegramStatus } = trpc.telegram.status.useQuery(undefined, {
-    enabled: !!user,
+    enabled: showCommunityFeatures && !!user,
     refetchInterval: (query) => {
       const status = query.state.data;
       if (!status || status.bound) return false;
@@ -380,7 +381,7 @@ function ProfileContent() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{translateText("个人资料")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{translateText("管理账号安全、头像和 Telegram。")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{showCommunityFeatures ? translateText("管理账号安全、头像和 Telegram。") : translateText("管理账号安全和头像。")}</p>
         </div>
         <Badge variant="outline" className="w-fit gap-1.5 px-3 py-1.5">
           <UserRound className="h-3.5 w-3.5" />
@@ -491,7 +492,7 @@ function ProfileContent() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <GoogleAccountCard />
-        {discordStatus?.selected ? <DiscordAccountCard /> : (
+        {showCommunityFeatures && (discordStatus?.selected ? <DiscordAccountCard /> : (
         <Card className="border-border/50 bg-card/70">
           <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -591,7 +592,7 @@ function ProfileContent() {
           </CardContent>
         </Card>
 
-        )}
+        ))}
         <Card className="border-border/50 bg-card/70">
           <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>

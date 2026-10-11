@@ -1,4 +1,5 @@
 import { getFormatLocale } from "@/i18n";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import { t as translateText } from "@/i18n";
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -108,7 +109,7 @@ export default function Announcements() {
       content: form.content.trim(),
       type: form.type,
       targetVersion: null,
-      telegramPush: form.telegramPush,
+      telegramPush: showCommunityFeatures && form.telegramPush,
     };
     if (form.id) updateAnnouncement.mutate({ ...payload, id: form.id });
     else createAnnouncement.mutate(payload);
@@ -226,7 +227,7 @@ export default function Announcements() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 rounded-lg border border-border/40 bg-muted/15 p-3 sm:flex-row sm:items-center sm:justify-between">
+              {showCommunityFeatures && <div className="flex flex-col gap-3 rounded-lg border border-border/40 bg-muted/15 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <Label>{translateText("同步通知渠道推送")}</Label>
                   <p className="mt-1 text-xs text-muted-foreground">{translateText("仅发送给已绑定所选通知渠道且在个人资料中开启公告推送的用户。")}</p>
@@ -235,7 +236,7 @@ export default function Announcements() {
                   checked={form.telegramPush}
                   onCheckedChange={(telegramPush) => setForm({ ...form, telegramPush })}
                 />
-              </div>
+              </div>}
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">

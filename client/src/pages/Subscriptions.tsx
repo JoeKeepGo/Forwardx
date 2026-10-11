@@ -1,4 +1,5 @@
 import { getFormatLocale } from "@/i18n";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import { t as translateText } from "@/i18n";
 import DashboardLayout from "@/components/DashboardLayout";
 import AnimatedStatValue from "@/components/AnimatedStatValue";
@@ -87,7 +88,7 @@ export default function Subscriptions() {
   const { user } = useAuth();
   const confirmDialog = useConfirmDialog();
   const [, setLocation] = useLocation();
-  const { data: storeStatus } = trpc.plans.storeStatus.useQuery();
+  const { data: storeStatus } = trpc.plans.storeStatus.useQuery(undefined, { enabled: showCommunityFeatures });
   const { data: wallet, isLoading: walletLoading } = trpc.billing.me.useQuery();
   const { data: billingFeatures } = trpc.billing.featureStatus.useQuery();
   const { data: paymentMethods = [] } = trpc.payment.availableMethods.useQuery(undefined, {
@@ -293,7 +294,7 @@ export default function Subscriptions() {
               <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />{translateText(" 暂无可显示订阅")}</CardTitle>
               <CardDescription>{cancelledCount > 0 ? translateText("已取消记录当前处于隐藏状态。") : translateText("当前账户还没有套餐记录。")}</CardDescription>
             </CardHeader>
-            {storeStatus?.enabled && (
+            {showCommunityFeatures && storeStatus?.enabled && (
               <CardFooter>
                 <Button onClick={() => setLocation("/store")}>
                   <ShoppingBag className="mr-2 h-4 w-4" />{translateText(" 去商店购买")}</Button>
@@ -310,7 +311,7 @@ export default function Subscriptions() {
             const purchasedAddonBytes = Number(sub.purchasedTrafficAddonBytes || 0);
             const grantedAddonBytes = Number(sub.grantedTrafficAddonBytes || 0);
             const validUntil = cycleEnd(sub);
-            const canRenew = !!storeStatus?.enabled && !!sub.planId && sub.status !== "cancelled"
+            const canRenew = showCommunityFeatures && !!storeStatus?.enabled && !!sub.planId && sub.status !== "cancelled"
               && (sub.source === "payment" || sub.source === "balance");
             const requiresAdminRenewal = sub.status !== "cancelled"
               && (sub.source === "admin" || sub.source === "redeem");
@@ -399,7 +400,7 @@ export default function Subscriptions() {
                     </div>
                   </div>
 
-                  {addons.length > 0 && (
+                  {showCommunityFeatures && addons.length > 0 && (
                     <div className="space-y-2">
                       <div className="text-sm font-medium">{translateText("购买附加流量")}</div>
                       <div className="grid gap-2 sm:grid-cols-2">
@@ -420,7 +421,7 @@ export default function Subscriptions() {
                     </div>
                   )}
 
-                  {isActive && Number(sub.trafficLimit || 0) > 0 && addons.length === 0 && (
+                  {showCommunityFeatures && isActive && Number(sub.trafficLimit || 0) > 0 && addons.length === 0 && (
                     <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{translateText("暂无可购买的附加流量包")}</div>
                   )}
                 </CardContent>

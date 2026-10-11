@@ -1,4 +1,5 @@
 import { t as translateText } from "@/i18n";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import { useState, useCallback, useEffect, useRef } from "react";
 import LanguageSelector from "@/components/LanguageSelector";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
@@ -453,7 +454,7 @@ export default function Login() {
       toast.error(error.message || translateText("Telegram 登录失败"));
     },
   });
-  const { data: discordLoginStatus } = trpc.discord.loginStatus.useQuery();
+  const { data: discordLoginStatus } = trpc.discord.loginStatus.useQuery(undefined, { enabled: showCommunityFeatures });
   const discordLoginTried = useRef("");
   const discordLoginMutation = trpc.discord.login.useMutation({
     onSuccess: (data) => {
@@ -465,6 +466,7 @@ export default function Login() {
     onError: (error) => toast.error(error.message || translateText("Discord 登录失败")),
   });
   useEffect(() => {
+    if (!showCommunityFeatures) return;
     const code = new URLSearchParams(search).get("discord");
     if (!code || discordLoginTried.current === code) return;
     discordLoginTried.current = code;
@@ -631,7 +633,7 @@ export default function Login() {
 
   useEffect(() => {
     if (telegramWebAppAutoLoginTriedRef.current || telegramWebAppLoginMutation.isPending) return;
-    if (!isTelegramWebAppRequested()) return;
+    if (!showCommunityFeatures || !isTelegramWebAppRequested()) return;
 
     const challenge = getTelegramWebAppChallenge();
     let cancelled = false;
@@ -680,6 +682,7 @@ export default function Login() {
   }, [telegramWebAppLoginMutation.isPending, telegramWebAppLoginMutation.mutate]);
 
   useEffect(() => {
+    if (!showCommunityFeatures) return;
     if (getTelegramWebAppInitData()) return;
     const code = new URLSearchParams(search).get("tg");
     if (!code || telegramLoginCode === code || telegramLoginMutation.isPending) return;
@@ -859,7 +862,7 @@ export default function Login() {
   const isTwoFactorPending = verifyTwoFactorLoginMutation.isPending;
   const isTelegramPending = telegramLoginMutation.isPending || telegramWebAppLoginMutation.isPending;
   const isMobileTelegramWaiting = startMobileTelegramLoginMutation.isPending || !!mobileTelegramLogin;
-  const showTelegramLoginSlot = mode === "login" && hasMobilePanelUrl && !getTelegramWebAppInitData();
+  const showTelegramLoginSlot = showCommunityFeatures && mode === "login" && hasMobilePanelUrl && !getTelegramWebAppInitData();
   const captchaCooldownSeconds = Math.max(0, Math.ceil((captchaCooldownUntil - Date.now()) / 1000));
   const activeCaptchaImage = captchaChallenge?.purpose === captchaPurpose ? captchaChallenge.imageDataUrl : undefined;
   const captchaRefreshTitle = captchaCooldownSeconds > 0
@@ -1052,7 +1055,7 @@ export default function Login() {
               </Button>
 
               <GoogleLoginButton disabled={isPending} />
-              {mode === "login" && discordLoginStatus?.enabled && discordLoginStatus.botId && (
+              {showCommunityFeatures && mode === "login" && discordLoginStatus?.enabled && discordLoginStatus.botId && (
                 <div className="space-y-2 rounded-lg border p-3 text-center"><p className="text-sm">{translateText("Discord 快捷登录")}</p><p className="text-xs text-muted-foreground">{translateText("在已绑定的机器人私聊中发送 /login，打开一次性登录链接。")}</p><Button variant="outline" asChild><a href={`https://discord.com/users/${discordLoginStatus.botId}`} target="_blank" rel="noopener noreferrer">{translateText("打开 Discord")}</a></Button></div>
               )}
               {showTelegramLoginSlot && !discordLoginStatus?.enabled && (
@@ -1337,4 +1340,3 @@ export default function Login() {
     </div>
   );
 }
-

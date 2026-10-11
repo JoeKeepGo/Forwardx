@@ -1,4 +1,5 @@
 import { getFormatLocale } from "@/i18n";
+import { showCommunityFeatures } from "@/lib/communityFeatures";
 import { t as translateText } from "@/i18n";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AnimatedStatValue from "@/components/AnimatedStatValue";
@@ -1356,12 +1357,12 @@ function UsersContent() {
                         {u.expiresAt ? new Date(u.expiresAt).toLocaleDateString(getFormatLocale()) : translateText("不限")}
                       </p>
                     </div>
-                    <div className="min-w-0 rounded-md bg-muted/25 p-2">
+                    {showCommunityFeatures && <div className="min-w-0 rounded-md bg-muted/25 p-2">
                       <p className="text-muted-foreground">Telegram</p>
                       <p className="mt-1 truncate font-medium">
                         {u.telegramId ? (u.telegramUsername ? `@${u.telegramUsername}` : u.telegramFirstName || u.telegramId) : translateText("未绑定")}
                       </p>
-                    </div>
+                    </div>}
                     <div className="min-w-0 rounded-md bg-muted/25 p-2">
                       <p className="text-muted-foreground">{translateText("邮箱")}</p>
                       <p className="mt-1 truncate font-medium">{u.emailVerified ? translateText("已验证") : u.email ? translateText("未验证") : translateText("未填写")}</p>
@@ -1424,7 +1425,7 @@ function UsersContent() {
                     <TableHead className="w-[60px] whitespace-nowrap">ID</TableHead>
                     <TableHead className="w-[260px] whitespace-nowrap">{translateText("用户")}</TableHead>
                     <TableHead className="w-[210px] whitespace-nowrap">{translateText("流量使用")}</TableHead>
-                    <TableHead className="hidden w-[140px] whitespace-nowrap xl:table-cell">Telegram</TableHead>
+                    {showCommunityFeatures && <TableHead className="hidden w-[140px] whitespace-nowrap xl:table-cell">Telegram</TableHead>}
                     <TableHead className="hidden w-[120px] whitespace-nowrap md:table-cell">{translateText("余额")}</TableHead>
                     <TableHead className="hidden w-[140px] whitespace-nowrap md:table-cell">{translateText("到期时间")}</TableHead>
                     <TableHead className="hidden w-[160px] whitespace-nowrap text-center lg:table-cell">{translateText("转发总开关")}</TableHead>
@@ -1506,7 +1507,7 @@ function UsersContent() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="hidden xl:table-cell">
+                        {showCommunityFeatures && <TableCell className="hidden xl:table-cell">
                           {u.telegramId ? (
                             <div className="flex items-center gap-2">
                               <Send className="h-3.5 w-3.5 text-primary" />
@@ -1522,7 +1523,7 @@ function UsersContent() {
                           ) : (
                             <span className="text-xs text-muted-foreground">{translateText("未绑定")}</span>
                           )}
-                        </TableCell>
+                        </TableCell>}
                         <TableCell className="hidden md:table-cell">
                           <span className="text-sm font-medium">
                             {formatCurrencyCny(u.balanceCents)}

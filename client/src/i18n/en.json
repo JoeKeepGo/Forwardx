@@ -1287,6 +1287,8 @@
   "管理员账户已创建，请登录": "Administrator account created, please log in",
   "管理员账户已更新，请登录": "The administrator's account has been updated. Login",
   "管理账号安全、头像和 Telegram。": "Manage account numbers security, headers and Telegram.",
+  "管理账号安全和头像。": "Manage account security and your avatar.",
+  "AI 助手": "AI Assistant",
   "管理主机": "Manage Hosts",
   "管理主机 Ping / TCPing 探测服务。": "Manages the host Ping / TCPing detection service.",
   "管理转发规则和运行状态": "Manage forwarding rules and operational status",
